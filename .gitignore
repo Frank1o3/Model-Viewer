@@ -1,1 +1,1 @@
-Nothing should be ignored based on the provided file changes. The only modified file is a source code file (`src/static/js/modules/ui.js`), which should not be added to .gitignore.
+(src/static/js/app.js and src/static/js/modules/scene.js are source code files, not build artifacts or temporary files, so no additional ignore rules are needed beyond what might already exist)
