@@ -3,10 +3,10 @@
 // ══════════════════════════════════════════════════════
 
 import * as THREE from 'three';
-import { initScene } from './modules/scene.js';
+import { initScene, addMeshToScene, addTextureToScene, getMeshes, getTextures, clearTracking, on as onSceneEvent } from './modules/scene.js';
 import { texRegistry, registerTextureFiles, fixMaterials, loadModel, normalizeModel, extractBones, buildBoneTree } from './modules/loader.js';
 import { SpringBone, SoftBodyGroup, paintVertices, PythonPhysicsBackend } from './modules/physics.js';
-import { UIManager, showToast, sliderVal, linkSlider, initBrushCursor, updateBrushCursor, showLoading, updateTexCount } from './modules/ui.js';
+import { UIManager, showToast, sliderVal, linkSlider, initBrushCursor, updateBrushCursor, showLoading, updateTexCount, updateViewCount } from './modules/ui.js';
 
 // ══════════════════════════════════════════════════════
 //  INITIALIZATION
@@ -16,6 +16,15 @@ const viewport = document.getElementById('viewport');
 
 // Initialize scene
 const { renderer, scene, camera, controls, clock, grid } = initScene(canvas, viewport);
+
+// Listen for scene events to update UI
+onSceneEvent('meshes-updated', () => {
+    updateViewLists();
+});
+
+onSceneEvent('textures-updated', () => {
+    updateViewLists();
+});
 
 // Initialize UI manager
 const ui = new UIManager();
@@ -54,6 +63,60 @@ const pythonPhysics = new PythonPhysicsBackend('/api/physics');
 // UI callbacks
 ui.onHUDUpdate = () => ui.updateHUD(selectedBone, paintMode);
 ui.onStopPainting = stopPainting;
+ui.onViewCountChange = () => updateViewLists();
+
+// ══════════════════════════════════════════════════════
+//  VIEW LIST UPDATES
+// ══════════════════════════════════════════════════════
+function updateViewLists() {
+    const meshesList = document.getElementById('vlist-meshes');
+    const texturesList = document.getElementById('vlist-textures');
+    const countEl = document.getElementById('vlist-count');
+    const emptyMsg = document.getElementById('empty-msg');
+    
+    if (!meshesList || !texturesList) return;
+    
+    const meshes = getMeshes();
+    const textures = getTextures();
+    
+    // Update count
+    if (countEl) {
+        countEl.textContent = `${meshes.length} meshes, ${textures.length} textures`;
+    }
+    
+    // Hide empty message if we have content
+    if (emptyMsg) {
+        emptyMsg.style.display = (meshes.length === 0 && textures.length === 0) ? 'block' : 'none';
+    }
+    
+    // Update meshes list
+    meshesList.innerHTML = '';
+    meshes.forEach((mesh, idx) => {
+        const div = document.createElement('div');
+        div.className = 'group-item';
+        div.innerHTML = `
+            <span class="group-name">${mesh.name || 'Mesh_' + idx}</span>
+            <span class="group-count">${mesh.geometry?.attributes?.position?.count || 0} verts</span>
+        `;
+        div.addEventListener('click', () => {
+            mesh.visible = !mesh.visible;
+            div.classList.toggle('active', mesh.visible);
+        });
+        div.classList.toggle('active', mesh.visible);
+        meshesList.appendChild(div);
+    });
+    
+    // Update textures list
+    texturesList.innerHTML = '';
+    textures.forEach((tex, idx) => {
+        const div = document.createElement('div');
+        div.className = 'group-item active';
+        div.innerHTML = `
+            <span class="group-name">${tex.name || 'Tex_' + idx}</span>
+        `;
+        texturesList.appendChild(div);
+    });
+}
 
 // ══════════════════════════════════════════════════════
 //  BONE MANAGEMENT
@@ -316,10 +379,14 @@ function onModelLoaded(root, filename, fmt) {
     clearBones();
     clearSoftGroups();
     springBones.clear();
+    clearTracking();
     
     currentModel = root;
     modelFormat = fmt;
-    scene.add(root);
+    
+    // Add mesh to scene with tracking
+    addMeshToScene(scene, root);
+    
     fixMaterials(root, fmt);
     
     // Normalize model
@@ -328,8 +395,9 @@ function onModelLoaded(root, filename, fmt) {
     // Extract bones and build UI
     extractAndBuildBones(root);
     
-    // Update texture count
+    // Update texture count and view count
     updateTexCount(texRegistry.size);
+    updateViewLists();
     
     showToast('Model loaded: ' + filename, true);
 }

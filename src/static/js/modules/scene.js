@@ -5,6 +5,21 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
+const meshes = [];
+const textures = [];
+const listeners = {};
+
+export function on(event, callback) {
+    if (!listeners[event]) listeners[event] = [];
+    listeners[event].push(callback);
+}
+
+function emit(event, data) {
+    if (listeners[event]) {
+        listeners[event].forEach(cb => cb(data));
+    }
+}
+
 /**
  * Initialize the Three.js scene, camera, renderer, and controls
  */
@@ -121,6 +136,53 @@ export function fitCameraToObject(camera, controls, object) {
  */
 export function addFog(scene, color = 0x0a0c0f, density = 0.005) {
     scene.fog = new THREE.FogExp2(color, density);
+}
+
+/**
+ * Add a mesh to the scene and track it
+ */
+export function addMeshToScene(scene, mesh) {
+    mesh.traverse((child) => {
+        if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+            meshes.push(child);
+        }
+    });
+    scene.add(mesh);
+    emit('meshes-updated', getMeshes());
+}
+
+/**
+ * Add a texture to the tracking list
+ */
+export function addTextureToScene(texture, name) {
+    textures.push({ name, texture });
+    emit('textures-updated', getTextures());
+}
+
+/**
+ * Get all tracked meshes
+ */
+export function getMeshes() {
+    return meshes;
+}
+
+/**
+ * Get all tracked textures
+ */
+export function getTextures() {
+    return textures;
+}
+
+/**
+ * Clear all meshes and textures from tracking
+ */
+export function clearTracking() {
+    meshes.length = 0;
+    textures.length = 0;
+    emit('meshes-updated', []);
+    emit('textures-updated', []);
 }
 
 // Export commonly used Three.js components
