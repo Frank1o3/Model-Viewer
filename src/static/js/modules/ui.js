@@ -78,6 +78,8 @@ export class UIManager {
 /**
  * Toast notification system
  */
+let _toastTimer = null;
+
 export function showToast(msg, ok = false) {
     const el = document.getElementById('toast');
     if (!el) return;
@@ -85,8 +87,8 @@ export function showToast(msg, ok = false) {
     el.textContent = msg;
     el.className = 'show' + (ok ? ' ok' : '');
     
-    if (this._toastTimer) clearTimeout(this._toastTimer);
-    this._toastTimer = setTimeout(() => el.className = '', 3500);
+    if (_toastTimer) clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(() => el.className = '', 3500);
 }
 
 /**
