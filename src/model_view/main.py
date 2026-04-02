@@ -7,6 +7,8 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from model_view.physics_api import router as physics_router
+
 logger = logging.getLogger("uvicorn.error")
 
 root = Path(__file__).parent.parent
@@ -21,6 +23,10 @@ app = FastAPI()
 # Mounting the public dir
 app.mount("/static", StaticFiles(directory=static_path), name="static")
 logger.info("Mounted static dir")
+
+# Include physics API routes
+app.include_router(physics_router)
+logger.info("Mounted physics API routes")
 
 # Setting up middlewares so browser knows to use gzip and to send json json objects
 app.add_middleware(GZipMiddleware, minimum_size=1000)
