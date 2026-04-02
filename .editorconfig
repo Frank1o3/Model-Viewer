@@ -1,0 +1,55 @@
+# EditorConfig is awesome: https://editorconfig.org
+root = true
+
+# ── Defaults (everything) ──────────────────────
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# ── Python ─────────────────────────────────────
+# (inherits defaults — nothing extra needed)
+# max_line_length is NOT an EditorConfig property,
+# set it in ruff.toml instead (already done there)
+[*.py]
+
+# ── TOML (pyproject.toml etc) ──────────────────
+[*.toml]
+indent_size = 4
+
+# ── YAML (GitHub Actions, configs) ─────────────
+[*.{yml,yaml}]
+indent_size = 2
+
+# ── JSON ────────────────────────────────────────
+[*.json]
+indent_size = 2
+
+# ── Markdown ────────────────────────────────────
+[*.md]
+trim_trailing_whitespace = false
+# trailing spaces in markdown = intentional line break (<br>)
+
+# ── Shell scripts ────────────────────────────────
+[*.sh]
+indent_size = 4
+
+# ── Makefile — MUST use tabs ─────────────────────
+[Makefile]
+indent_style = tab
+
+# ─────────────────────────────────────────────────
+# C / C++ (for the cpp-extension branch)
+# ─────────────────────────────────────────────────
+[*.{c,cpp,cc,cxx}]
+indent_size = 4
+
+[*.{h,hpp,hh}]
+indent_size = 4
+
+# ── CMake ────────────────────────────────────────
+[{CMakeLists.txt,*.cmake}]
+indent_size = 4

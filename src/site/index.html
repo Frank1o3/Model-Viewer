@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="icon" href="/static/favicon.ico">
+    <title>Model Viewer</title>
+    <script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+
+<body>
+    <div id="app">
+        <!-- ── Sidebar ── -->
+        <aside id="sidebar">
+            <div id="sb-header">
+                <div class="logo">◈ viewer v3.0</div>
+                <div class="sb-title">Model Viewer</div>
+            </div>
+
+            <div id="nav-tabs">
+                <button class="nav-tab active" data-panel="view"><span class="nt-icon">👁</span>View</button>
+                <button class="nav-tab" data-panel="bones"><span class="nt-icon">🦴</span>Bones</button>
+                <button class="nav-tab" data-panel="physics"><span class="nt-icon">⚡</span>Physics</button>
+            </div>
+
+            <!-- ══ VIEW PANEL ══ -->
+            <div id="panel-view" class="panel active">
+                <div id="drop-zone">
+                    <span id="drop-icon">⬡</span>
+                    <span id="drop-label">
+                        <strong>Drop model here</strong><br>
+                        .glb &nbsp;·&nbsp; .gltf &nbsp;·&nbsp; .fbx
+                    </span>
+                    <input type="file" id="file-input" accept=".glb,.gltf,.fbx">
+                    <input type="file" id="tex-input" multiple accept="image/*,.png,.jpg,.jpeg,.tga,.bmp">
+                </div>
+                <div class="tex-bar">
+                    <button class="pill-btn blue" id="btn-load-tex">+ Textures</button>
+                    <span id="tex-count"></span>
+                </div>
+                <div id="model-info" style="padding:0 12px 8px;display:none"></div>
+
+                <div id="view-tabs">
+                    <button class="vtab active" data-vtab="textures">Textures</button>
+                    <button class="vtab" data-vtab="meshes">Meshes</button>
+                </div>
+                <div class="sect">
+                    <span id="vlist-count">—</span>
+                    <button id="btn-all-on">All On</button>
+                </div>
+                <div class="panel-scroll">
+                    <div id="empty-msg"
+                        style="padding:20px 16px;text-align:center;font-family:var(--mono);font-size:11px;color:var(--dim);line-height:1.8">
+                        Load a <span style="color:var(--accent)">.glb</span> or <span
+                            style="color:var(--accent)">.fbx</span> to begin
+                    </div>
+                    <div id="vlist-textures" class="vlist active"></div>
+                    <div id="vlist-meshes" class="vlist"></div>
+                </div>
+            </div>
+
+            <!-- ══ BONES PANEL ══ -->
+            <div id="panel-bones" class="panel">
+                <!-- Selected bone info -->
+                <div id="bone-info" class="bone-info-box" style="display:none">
+                    <div class="bi-name" id="bone-info-name">—</div>
+                    <div class="bi-hint">LMB drag · rotate &nbsp;|&nbsp; Shift+drag · Z-axis</div>
+                </div>
+
+                <div class="sect">
+                    CONTROLS
+                    <div style="display:flex;gap:4px">
+                        <button id="btn-reset-pose">Reset Pose</button>
+                        <button id="btn-toggle-skel">Show Skel</button>
+                    </div>
+                </div>
+                <div class="sect">BONES <span id="bone-count">—</span></div>
+
+                <div class="panel-scroll">
+                    <div id="no-bones" class="no-bones">Load a rigged model<br>to see its <span
+                            class="hint">skeleton</span></div>
+                    <div id="bone-tree" class="btree"></div>
+                </div>
+            </div>
+
+            <!-- ══ PHYSICS PANEL ══ -->
+            <div id="panel-physics" class="panel">
+                <div class="mode-sel">
+                    <button class="mode-btn active" data-phys="bones">🦴 On Bones</button>
+                    <button class="mode-btn" data-phys="mesh">🫧 On Mesh</button>
+                </div>
+
+                <!-- Bones physics sub-panel -->
+                <div id="phys-bones" class="phys-sub active">
+                    <div class="sect">SELECTED BONE
+                        <button id="btn-apply-spring">Apply Spring</button>
+                    </div>
+                    <div id="sp-bone-name"
+                        style="padding:6px 12px;font-family:var(--mono);font-size:11px;color:var(--dim)">None selected
+                    </div>
+
+                    <div class="slider-row">
+                        <label>Stiffness</label>
+                        <input type="range" id="sp-stiffness" min="1" max="50" value="12" step="0.5">
+                        <span class="val" id="sp-stiffness-val">12</span>
+                    </div>
+                    <div class="slider-row">
+                        <label>Damping</label>
+                        <input type="range" id="sp-damping" min="0.1" max="20" value="5" step="0.1">
+                        <span class="val" id="sp-damping-val">5.0</span>
+                    </div>
+                    <div class="slider-row">
+                        <label>Gravity</label>
+                        <input type="range" id="sp-gravity" min="0" max="5" value="0" step="0.1">
+                        <span class="val" id="sp-gravity-val">0.0</span>
+                    </div>
+                    <div class="row-btn-group">
+                        <button class="pill-btn orange" id="btn-kick-all">Kick All</button>
+                        <button class="pill-btn danger" id="btn-remove-spring">Remove</button>
+                    </div>
+
+                    <div class="sect">SPRING BONES <span id="spring-count">0</span></div>
+                    <div id="spring-list"></div>
+                </div>
+
+                <!-- Mesh physics sub-panel -->
+                <div id="phys-mesh" class="phys-sub">
+                    <div class="sect">BRUSH</div>
+                    <div class="slider-row">
+                        <label>Radius</label>
+                        <input type="range" id="br-radius" min="0.02" max="1.0" value="0.15" step="0.01">
+                        <span class="val" id="br-radius-val">0.15</span>
+                    </div>
+                    <div class="slider-row">
+                        <label>Stiffness</label>
+                        <input type="range" id="br-stiffness" min="1" max="80" value="20" step="1">
+                        <span class="val" id="br-stiffness-val">20</span>
+                    </div>
+                    <div class="slider-row">
+                        <label>Damping</label>
+                        <input type="range" id="br-damping" min="0.1" max="20" value="6" step="0.1">
+                        <span class="val" id="br-damping-val">6.0</span>
+                    </div>
+
+                    <div class="sect">GROUPS
+                        <button id="btn-new-group">+ New</button>
+                    </div>
+                    <div class="row-btn-group">
+                        <button class="pill-btn" id="btn-paint-toggle">🖌 Paint</button>
+                        <button class="pill-btn danger" id="btn-erase-toggle">✕ Erase</button>
+                        <button class="pill-btn orange" id="btn-kick-group">Kick</button>
+                    </div>
+                    <div class="brush-cursor-hint" id="paint-hint">Select a group and click Paint,<br>then draw on the
+                        mesh</div>
+
+                    <div id="group-list"></div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- ── Viewport ── -->
+        <div id="viewport">
+            <canvas id="canvas"></canvas>
+            <div id="loading">
+                <div class="spinner"></div>
+                <div id="load-pct">0%</div>
+                <div id="load-text">LOADING</div>
+            </div>
+            <div id="hud">
+                <span class="hud-mode" id="hud-mode"></span><br>
+                LMB · orbit &nbsp;|&nbsp; Scroll · zoom &nbsp;|&nbsp; RMB · pan
+            </div>
+        </div>
+    </div>
+    <div id="toast"></div>
+
+    <script type="module" src="/static/app.js"></script>
+</body>
+
+</html>

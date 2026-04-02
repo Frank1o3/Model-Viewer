@@ -1,0 +1,44 @@
+line-length = 100
+respect-gitignore = true
+
+fix = true
+unsafe-fixes = false  # explicit — never auto-apply unsafe fixes in a template
+
+cache-dir = ".cache/ruff"
+
+[lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # import sorting
+    "UP",   # pyupgrade
+    "B",    # bugbear
+    "SIM",  # simplify
+    "C4",   # comprehensions
+    "PIE",  # misc improvements
+    "RUF",  # ruff-native rules
+]
+ignore = [
+    "E501",   # formatter handles line length
+    "B008",   # do not perform function calls in default args (too noisy)
+    "SIM108", # ternary operator (sometimes less readable)
+]
+
+[lint.isort]
+combine-as-imports = true
+force-sort-within-sections = true
+# 👇 rename this when using the template
+known-first-party = ["project_name"]
+
+[lint.per-file-ignores]
+"tests/**/*.py" = [
+    "S101",  # allow assert — NOTE: only useful if you add "S" to select later
+    "RUF",   # relax ruff-native rules in tests
+]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "lf"
