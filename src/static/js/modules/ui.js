@@ -2,6 +2,8 @@
 //  UI MODULE - User Interface Management
 // ══════════════════════════════════════════════════════
 
+import * as THREE from 'three';
+
 /**
  * Panel and navigation management
  */
