@@ -213,13 +213,31 @@ function selectBone(bone) {
         }
         const sb = springBones.get(bone.uuid);
         
-        // Update sliders
-        document.getElementById('stiffness-val').textContent = sb.stiffness.toFixed(1);
-        document.getElementById('damping-val').textContent = sb.damping.toFixed(1);
-        document.getElementById('gravity-val').textContent = sb.gravity.toFixed(2);
+        // Update sliders - use sp- prefixed IDs for physics panel
+        const stiffnessVal = document.getElementById('sp-stiffness-val');
+        const dampingVal = document.getElementById('sp-damping-val');
+        const gravityVal = document.getElementById('sp-gravity-val');
+        const stiffnessSlider = document.getElementById('sp-stiffness');
+        const dampingSlider = document.getElementById('sp-damping');
+        const gravitySlider = document.getElementById('sp-gravity');
+        
+        if (stiffnessVal) stiffnessVal.textContent = sb.stiffness.toFixed(1);
+        if (dampingVal) dampingVal.textContent = sb.damping.toFixed(1);
+        if (gravityVal) gravityVal.textContent = sb.gravity.toFixed(2);
+        
+        if (stiffnessSlider) stiffnessSlider.value = sb.stiffness;
+        if (dampingSlider) dampingSlider.value = sb.damping;
+        if (gravitySlider) gravitySlider.value = sb.gravity;
+    }
+    
+    // Update bone info display
+    const boneNameEl = document.getElementById('sp-bone-name');
+    if (boneNameEl) {
+        boneNameEl.textContent = bone.name || 'Selected bone';
     }
     
     ui.updateHUD(selectedBone, paintMode);
+    updateSpringList();
 }
 
 // ══════════════════════════════════════════════════════
@@ -251,7 +269,7 @@ function setActiveGroup(g) {
     activeGroup = g;
     updateGroupList();
     if (g && g._dirty) {
-        g.rebuildPoints();
+        g.rebuildPoints(scene);
     }
 }
 
@@ -365,6 +383,101 @@ linkSlider('stiffness-slider', 'stiffness-val', 1);
 linkSlider('damping-slider', 'damping-val', 1);
 linkSlider('gravity-slider', 'gravity-val', 2);
 linkSlider('br-radius', 'br-radius-val', 2);
+linkSlider('sp-stiffness', 'sp-stiffness-val', 1);
+linkSlider('sp-damping', 'sp-damping-val', 1);
+linkSlider('sp-gravity', 'sp-gravity-val', 2);
+linkSlider('br-stiffness', 'br-stiffness-val', 1);
+linkSlider('br-damping', 'br-damping-val', 1);
+
+// ══════════════════════════════════════════════════════
+//  PHYSICS BUTTONS
+// ══════════════════════════════════════════════════════
+
+// Apply spring to selected bone
+const btnApplySpring = document.getElementById('btn-apply-spring');
+if (btnApplySpring) {
+    btnApplySpring.addEventListener('click', () => {
+        if (!selectedBone) {
+            showToast('Select a bone first');
+            return;
+        }
+        
+        const stiffness = sliderVal('sp-stiffness');
+        const damping = sliderVal('sp-damping');
+        const gravity = sliderVal('sp-gravity');
+        
+        // Create or update spring bone
+        if (!springBones.has(selectedBone.uuid)) {
+            const sb = new SpringBone(selectedBone, { stiffness, damping, gravity });
+            springBones.set(selectedBone.uuid, sb);
+            showToast(`Spring added to ${selectedBone.name}`);
+        } else {
+            const sb = springBones.get(selectedBone.uuid);
+            sb.stiffness = stiffness;
+            sb.damping = damping;
+            sb.gravity = gravity;
+            showToast(`Spring updated on ${selectedBone.name}`);
+        }
+        
+        updateSpringList();
+    });
+}
+
+// Kick all spring bones
+const btnKickAll = document.getElementById('btn-kick-all');
+if (btnKickAll) {
+    btnKickAll.addEventListener('click', () => {
+        springBones.forEach(sb => {
+            sb.kick(0.5, 0.5, 0.5);
+        });
+        showToast('Kicked all spring bones!');
+    });
+}
+
+// New soft body group
+const btnNewGroup = document.getElementById('btn-new-group');
+if (btnNewGroup) {
+    btnNewGroup.addEventListener('click', () => {
+        createSoftGroup();
+        showToast('New group created');
+    });
+}
+
+// Kick active group
+const btnKickGroup = document.getElementById('btn-kick-group');
+if (btnKickGroup) {
+    btnKickGroup.addEventListener('click', () => {
+        if (!activeGroup || activeGroup.vertices.length === 0) {
+            showToast('Select a group with vertices first');
+            return;
+        }
+        activeGroup.kick(new THREE.Vector3(0.3, 0.3, 0.3));
+        showToast('Kicked group!');
+    });
+}
+
+// Update spring list display
+function updateSpringList() {
+    const container = document.getElementById('spring-list');
+    const countEl = document.getElementById('spring-count');
+    if (!container) return;
+    
+    container.innerHTML = '';
+    if (countEl) countEl.textContent = springBones.size;
+    
+    springBones.forEach((sb, uuid) => {
+        const div = document.createElement('div');
+        div.className = 'group-item';
+        div.innerHTML = `
+            <span class="group-name">${sb.bone.name}</span>
+            <span class="group-count">k=${sb.stiffness.toFixed(1)}</span>
+        `;
+        div.addEventListener('click', () => {
+            selectBone(sb.bone);
+        });
+        container.appendChild(div);
+    });
+}
 
 // ══════════════════════════════════════════════════════
 //  MODEL LOADING
@@ -398,6 +511,7 @@ function onModelLoaded(root, filename, fmt) {
     // Update texture count and view count
     updateTexCount(texRegistry.size);
     updateViewLists();
+    updateSpringList();
     
     showToast('Model loaded: ' + filename, true);
 }
@@ -484,17 +598,117 @@ if (texInput) {
 // ══════════════════════════════════════════════════════
 //  ANIMATION LOOP
 // ══════════════════════════════════════════════════════
+
+// Batch update timers for backend calls
+let backendAccumulator = 0;
+const BACKEND_UPDATE_INTERVAL = 0.05; // 50ms between backend calls
+
+async function updatePhysicsWithBackend(dt) {
+    if (!pythonPhysics.enabled) return false;
+    
+    try {
+        // Update soft body groups via backend
+        if (softGroups.length > 0 && activeGroup && activeGroup.vertices.length > 0) {
+            const result = await pythonPhysics.computeSoftBody(
+                activeGroup.vertices,
+                activeGroup.stiffness,
+                activeGroup.damping,
+                dt
+            );
+            
+            if (result) {
+                // Apply results to vertices
+                result.vertices.forEach((v, i) => {
+                    if (i < activeGroup.vertices.length) {
+                        const vertex = activeGroup.vertices[i];
+                        vertex.offset.set(v.offset[0], v.offset[1], v.offset[2]);
+                        vertex.vel.set(v.velocity[0], v.velocity[1], v.velocity[2]);
+                        
+                        // Update mesh geometry
+                        const attr = vertex.mesh.geometry.attributes.position;
+                        attr.setXYZ(vertex.index,
+                            vertex.restPos.x + vertex.offset.x,
+                            vertex.restPos.y + vertex.offset.y,
+                            vertex.restPos.z + vertex.offset.z
+                        );
+                        vertex.mesh.geometry.attributes.position.needsUpdate = true;
+                        vertex.mesh.geometry.computeVertexNormals();
+                    }
+                });
+            }
+        }
+        
+        // Update spring bones via backend
+        if (springBones.size > 0) {
+            const bonesData = [];
+            springBones.forEach((sb, uuid) => {
+                const euler = new THREE.Euler().setFromQuaternion(sb.bone.quaternion);
+                bonesData.push({
+                    uuid,
+                    rest_quaternion: [sb.restQuat.x, sb.restQuat.y, sb.restQuat.z, sb.restQuat.w],
+                    offset_euler: [euler.x - new THREE.Euler().setFromQuaternion(sb.restQuat).x, 
+                                   euler.y - new THREE.Euler().setFromQuaternion(sb.restQuat).y, 
+                                   euler.z - new THREE.Euler().setFromQuaternion(sb.restQuat).z],
+                    velocity: [sb.velX, sb.velY, sb.velZ],
+                    stiffness: sb.stiffness,
+                    damping: sb.damping,
+                    gravity: sb.gravity
+                });
+            });
+            
+            const result = await pythonPhysics.computeSpringBones(bonesData, dt);
+            
+            if (result) {
+                // Apply results to bones
+                result.bones.forEach(boneResult => {
+                    const sb = springBones.get(boneResult.uuid);
+                    if (sb) {
+                        sb.offsetX = boneResult.offset_euler[0];
+                        sb.offsetY = boneResult.offset_euler[1];
+                        sb.offsetZ = boneResult.offset_euler[2];
+                        sb.velX = boneResult.velocity[0];
+                        sb.velY = boneResult.velocity[1];
+                        sb.velZ = boneResult.velocity[2];
+                        
+                        // Apply quaternion
+                        const offset = new THREE.Quaternion().setFromEuler(
+                            new THREE.Euler(sb.offsetX, sb.offsetY, sb.offsetZ)
+                        );
+                        sb.bone.quaternion.copy(sb.restQuat).multiply(offset);
+                    }
+                });
+            }
+        }
+        
+        return true;
+    } catch (error) {
+        console.warn('Backend physics update failed:', error);
+        pythonPhysics.enabled = false;
+        return false;
+    }
+}
+
 function animate() {
     requestAnimationFrame(animate);
     const dt = Math.min(clock.getDelta(), 0.05);
     
-    // Spring bones
-    springBones.forEach(sb => {
-        if (sb.enabled !== false) sb.update(dt);
-    });
-    
-    // Soft body groups
-    softGroups.forEach(g => g.update(dt));
+    // Try backend physics first if enabled
+    if (pythonPhysics.enabled) {
+        backendAccumulator += dt;
+        if (backendAccumulator >= BACKEND_UPDATE_INTERVAL) {
+            updatePhysicsWithBackend(backendAccumulator);
+            backendAccumulator = 0;
+        }
+    } else {
+        // Fall back to local JS physics
+        // Spring bones
+        springBones.forEach(sb => {
+            if (sb.enabled !== false) sb.update(dt);
+        });
+        
+        // Soft body groups
+        softGroups.forEach(g => g.update(dt));
+    }
     
     controls.update();
     renderer.render(scene, camera);

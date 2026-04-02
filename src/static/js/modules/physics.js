@@ -2,6 +2,8 @@
 //  PHYSICS MODULE - Spring Bones & Soft Body Physics
 // ══════════════════════════════════════════════════════
 
+import * as THREE from 'three';
+
 /**
  * SpringBone class for bone-based physics simulation
  */
@@ -101,9 +103,9 @@ export class SoftBodyGroup {
     }
 
     // Rebuild the overlay point cloud
-    rebuildPoints() {
+    rebuildPoints(sceneRef) {
         if (this.pointsMesh) {
-            scene.remove(this.pointsMesh);
+            sceneRef.remove(this.pointsMesh);
             this.pointsMesh.geometry.dispose();
         }
         if (this.vertices.length === 0) {
@@ -122,7 +124,7 @@ export class SoftBodyGroup {
         geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
         const mat = new THREE.PointsMaterial({ color: 0x00e5a0, size: 0.015, sizeAttenuation: true });
         this.pointsMesh = new THREE.Points(geo, mat);
-        scene.add(this.pointsMesh);
+        sceneRef.add(this.pointsMesh);
         this._dirty = false;
     }
 
