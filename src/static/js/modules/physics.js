@@ -2,45 +2,34 @@
 //  PHYSICS MODULE - Spring Bones & Soft Body Physics
 // ══════════════════════════════════════════════════════
 
+import * as THREE from 'three';
+
 /**
  * SpringBone class for bone-based physics simulation
  */
 export class SpringBone {
     constructor(bone, opts = {}) {
-        this.bone = bone;
+        this.bone      = bone;
         this.stiffness = opts.stiffness ?? 12;
-        this.damping = opts.damping ?? 5;
-        this.gravity = opts.gravity ?? 0;
-        this.enabled = true;
-        // Store the current (manually posed) quaternion as the "rest" target
-        this.restQuat = bone.quaternion.clone();
-        // Physics offset euler (oscillates around zero)
-        this.offsetX = 0;
-        this.offsetY = 0;
-        this.offsetZ = 0;
-        this.velX = 0;
-        this.velY = 0;
-        this.velZ = 0;
+        this.damping   = opts.damping   ?? 5;
+        this.gravity   = opts.gravity   ?? 0;
+        this.enabled   = true;
+        this.restQuat  = bone.quaternion.clone();
+        this.offsetX = 0; this.offsetY = 0; this.offsetZ = 0;
+        this.velX    = 0; this.velY    = 0; this.velZ    = 0;
     }
 
     syncRest() {
-        // Call this after manual bone manipulation so spring targets new pose
         this.restQuat.copy(this.bone.quaternion);
-        const e = new THREE.Euler().setFromQuaternion(this.restQuat);
-        this.offsetX = 0;
-        this.offsetY = 0;
-        this.offsetZ = 0;
+        this.offsetX = this.offsetY = this.offsetZ = 0;
     }
 
     kick(ax, ay, az) {
-        this.velX += ax;
-        this.velY += ay;
-        this.velZ += az;
+        this.velX += ax; this.velY += ay; this.velZ += az;
     }
 
     update(dt) {
         const k = this.stiffness, d = this.damping;
-        // Spring: F = -k*offset - d*vel
         this.velX += (-k * this.offsetX - d * this.velX) * dt;
         this.velY += (-k * this.offsetY - d * this.velY) * dt;
         this.velZ += (-k * this.offsetZ - d * this.velZ + this.gravity) * dt;
@@ -48,7 +37,6 @@ export class SpringBone {
         this.offsetY += this.velY * dt;
         this.offsetZ += this.velZ * dt;
 
-        // Apply: rest quaternion + physics offset
         const offset = new THREE.Quaternion().setFromEuler(
             new THREE.Euler(this.offsetX, this.offsetY, this.offsetZ)
         );
@@ -57,17 +45,19 @@ export class SpringBone {
 }
 
 /**
- * SoftBodyGroup class for vertex-based soft body simulation
+ * SoftBodyGroup - vertex-based soft body simulation.
+ * NOTE: rebuildPoints(scene) requires the Three.js scene to be passed in
+ * because this module has no global scene reference.
  */
 export class SoftBodyGroup {
     constructor(name, opts = {}) {
-        this.name = name;
+        this.name      = name;
         this.stiffness = opts.stiffness ?? 20;
-        this.damping = opts.damping ?? 6;
-        this.enabled = true;
-        this.vertices = []; // { mesh, index, restPos, offset, vel }
+        this.damping   = opts.damping   ?? 6;
+        this.enabled   = true;
+        this.vertices  = []; // { mesh, index, restPos, offset, vel }
         this.pointsMesh = null;
-        this._dirty = false;
+        this._dirty    = false;
     }
 
     hasVertex(mesh, index) {
@@ -82,40 +72,38 @@ export class SoftBodyGroup {
         this.vertices.push({
             mesh, index,
             restPos: pos.clone(),
-            offset: new THREE.Vector3(),
-            vel: new THREE.Vector3()
+            offset:  new THREE.Vector3(),
+            vel:     new THREE.Vector3()
         });
         this._dirty = true;
     }
 
     removeVertex(mesh, index) {
         const i = this.vertices.findIndex(v => v.mesh === mesh && v.index === index);
-        if (i !== -1) {
-            this.vertices.splice(i, 1);
-            this._dirty = true;
-        }
+        if (i !== -1) { this.vertices.splice(i, 1); this._dirty = true; }
     }
 
     kick(impulse) {
         this.vertices.forEach(v => v.vel.add(impulse));
     }
 
-    // Rebuild the overlay point cloud
-    rebuildPoints() {
+    /**
+     * Rebuild the overlay point cloud.
+     * @param {THREE.Scene} scene - must be passed since this module has no global scene
+     */
+    rebuildPoints(scene) {
         if (this.pointsMesh) {
             scene.remove(this.pointsMesh);
             this.pointsMesh.geometry.dispose();
-        }
-        if (this.vertices.length === 0) {
             this.pointsMesh = null;
-            return;
         }
+        if (this.vertices.length === 0) { this._dirty = false; return; }
 
         const geo = new THREE.BufferGeometry();
         const pos = new Float32Array(this.vertices.length * 3);
         this.vertices.forEach((v, i) => {
             const wp = v.restPos.clone().applyMatrix4(v.mesh.matrixWorld);
-            pos[i * 3] = wp.x;
+            pos[i * 3]     = wp.x;
             pos[i * 3 + 1] = wp.y;
             pos[i * 3 + 2] = wp.z;
         });
@@ -132,14 +120,13 @@ export class SoftBodyGroup {
         const meshesToUpdate = new Set();
 
         this.vertices.forEach(v => {
-            const ox = v.offset.x, oy = v.offset.y, oz = v.offset.z;
-            v.vel.x += (-k * ox - d * v.vel.x) * dt;
-            v.vel.y += (-k * oy - d * v.vel.y) * dt;
-            v.vel.z += (-k * oz - d * v.vel.z) * dt;
+            v.vel.x += (-k * v.offset.x - d * v.vel.x) * dt;
+            v.vel.y += (-k * v.offset.y - d * v.vel.y) * dt;
+            v.vel.z += (-k * v.offset.z - d * v.vel.z) * dt;
             v.offset.addScaledVector(v.vel, dt);
 
-            const attr = v.mesh.geometry.attributes.position;
-            attr.setXYZ(v.index,
+            v.mesh.geometry.attributes.position.setXYZ(
+                v.index,
                 v.restPos.x + v.offset.x,
                 v.restPos.y + v.offset.y,
                 v.restPos.z + v.offset.z
@@ -155,92 +142,67 @@ export class SoftBodyGroup {
 }
 
 /**
- * Advanced painting with visibility-aware raycasting
- * Paints only visible vertices, respecting mesh occlusion
+ * Visibility-aware vertex painting.
+ * Raycasts to the hit surface first, then selects vertices within radius.
+ * meshes array must be provided by the caller.
  */
-export function paintVertices(raycaster, camera, ndc, activeGroup, paintMode, brushRadius, visibleMeshesOnly = true) {
-    if (!activeGroup) return { painted: 0 };
+export function paintVertices(raycaster, camera, ndc, activeGroup, paintMode, brushRadius, meshes) {
+    if (!activeGroup || !meshes || meshes.length === 0) return { painted: 0 };
 
     raycaster.setFromCamera(ndc, camera);
-
-    // Get all meshes from the model
-    const allMeshes = [];
-    if (activeGroup.vertices.length > 0) {
-        // Collect unique meshes from the group
-        const meshSet = new Set(activeGroup.vertices.map(v => v.mesh));
-        allMeshes.push(...meshSet);
-    }
-
-    if (allMeshes.length === 0) return { painted: 0 };
-
-    // Intersect with meshes - this respects occlusion automatically
-    // The first hit is the visible surface
-    const hits = raycaster.intersectObjects(allMeshes);
-
+    const hits = raycaster.intersectObjects(meshes);
     if (hits.length === 0) return { painted: 0 };
 
-    const hit = hits[0];
+    const hit  = hits[0];
     const mesh = hit.object;
-    const wp = hit.point;
-    const pos = mesh.geometry.attributes.position;
-    const mw = mesh.matrixWorld;
-
-    let paintedCount = 0;
+    const wp   = hit.point;
+    const pos  = mesh.geometry.attributes.position;
+    const mw   = mesh.matrixWorld;
+    let painted = 0;
 
     for (let i = 0; i < pos.count; i++) {
         const v = new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(mw);
         if (v.distanceTo(wp) < brushRadius) {
-            if (paintMode === 'paint') {
-                activeGroup.addVertex(mesh, i);
-                paintedCount++;
-            } else {
-                activeGroup.removeVertex(mesh, i);
-                paintedCount++;
-            }
+            if (paintMode === 'paint') activeGroup.addVertex(mesh, i);
+            else                       activeGroup.removeVertex(mesh, i);
+            painted++;
         }
     }
-
-    return { painted: paintedCount };
+    return { painted };
 }
 
 /**
- * Python-backed physics computation (optional, for advanced simulations)
- * This would communicate with a Python backend using numpy for faster computation
+ * Optional Python numpy backend for heavy simulations.
  */
 export class PythonPhysicsBackend {
     constructor(serverUrl = '/api/physics') {
         this.serverUrl = serverUrl;
-        this.enabled = false;
-        this.latency = 0;
+        console.log(this.serverUrl);
+        this.enabled   = false;
+        this.latency   = 0;
     }
 
     async computeSoftBody(vertices, stiffness, damping, dt) {
         if (!this.enabled) return null;
-
         try {
-            const response = await fetch(this.serverUrl + '/compute', {
+            const res = await fetch(this.serverUrl + '/compute', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     vertices: vertices.map(v => ({
                         position: [v.restPos.x, v.restPos.y, v.restPos.z],
-                        offset: [v.offset.x, v.offset.y, v.offset.z],
-                        velocity: [v.vel.x, v.vel.y, v.vel.z]
+                        offset:   [v.offset.x,  v.offset.y,  v.offset.z],
+                        velocity: [v.vel.x,      v.vel.y,     v.vel.z]
                     })),
-                    stiffness,
-                    damping,
-                    dt
+                    stiffness, damping, dt
                 })
             });
-
-            if (!response.ok) throw new Error('Physics computation failed');
-
-            const result = await response.json();
-            this.latency = result.latency || 0;
-
-            return result.vertices;
-        } catch (error) {
-            console.warn('Python physics backend unavailable, falling back to JS:', error);
+            if (!res.ok) throw new Error('compute failed');
+            const data = await res.json();
+            this.latency = data.latency || 0;
+            return data.vertices;
+        } catch (e) {
+            console.warn('Python physics unavailable, falling back to JS:', e);
             this.enabled = false;
             return null;
         }
@@ -248,30 +210,19 @@ export class PythonPhysicsBackend {
 
     async computeSpringBones(bonesData, dt) {
         if (!this.enabled) return null;
-
         try {
-            const response = await fetch(this.serverUrl + '/spring', {
+            const res = await fetch(this.serverUrl + '/spring', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ bones: bonesData, dt })
             });
-
-            if (!response.ok) throw new Error('Spring bone computation failed');
-
-            const result = await response.json();
-            return result.bones;
-        } catch (error) {
-            console.warn('Python physics backend unavailable:', error);
+            if (!res.ok) throw new Error('spring failed');
+            const data = await res.json();
+            return data.bones;
+        } catch (e) {
+            console.warn('Python physics unavailable:', e);
             this.enabled = false;
             return null;
         }
     }
 }
-
-// Export for use in main app
-export const PhysicsModule = {
-    SpringBone,
-    SoftBodyGroup,
-    paintVertices,
-    PythonPhysicsBackend
-};
