@@ -259,9 +259,9 @@ function onModelLoaded(root, filename, fmt) {
     updateGroupList();
 }
 
-const dropZone = document.getElementById('drop-zone');
-const fileInput = document.getElementById('file-input');
-const texInput = document.getElementById('tex-input');
+let dropZone = document.getElementById('drop-zone');
+let fileInput = document.getElementById('file-input');
+let texInput = document.getElementById('tex-input');
 
 function handleLoad(file) {
     showLoading(true, 0, 'LOADING');
@@ -744,9 +744,9 @@ function updateSpringList() {
 // ══════════════════════════════════════════════════════
 //  MODEL LOADING
 // ══════════════════════════════════════════════════════
-const dropZone = document.getElementById('drop-zone');
-const fileInput = document.getElementById('file-input');
-const texInput = document.getElementById('tex-input');
+dropZone = document.getElementById('drop-zone');
+fileInput = document.getElementById('file-input');
+texInput = document.getElementById('tex-input');
 
 function onModelLoaded(root, filename, fmt) {
     // Cleanup old
@@ -909,8 +909,8 @@ async function updatePhysicsWithBackend(dt) {
                     uuid,
                     rest_quaternion: [sb.restQuat.x, sb.restQuat.y, sb.restQuat.z, sb.restQuat.w],
                     offset_euler: [euler.x - new THREE.Euler().setFromQuaternion(sb.restQuat).x,
-                                   euler.y - new THREE.Euler().setFromQuaternion(sb.restQuat).y,
-                                   euler.z - new THREE.Euler().setFromQuaternion(sb.restQuat).z],
+                    euler.y - new THREE.Euler().setFromQuaternion(sb.restQuat).y,
+                    euler.z - new THREE.Euler().setFromQuaternion(sb.restQuat).z],
                     velocity: [sb.velX, sb.velY, sb.velZ],
                     stiffness: sb.stiffness,
                     damping: sb.damping,
