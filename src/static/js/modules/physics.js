@@ -87,13 +87,10 @@ export class SoftBodyGroup {
         this.vertices.forEach(v => v.vel.add(impulse));
     }
 
-    /**
-     * Rebuild the overlay point cloud.
-     * @param {THREE.Scene} scene - must be passed since this module has no global scene
-     */
-    rebuildPoints(scene) {
+    // Rebuild the overlay point cloud
+    rebuildPoints(sceneRef) {
         if (this.pointsMesh) {
-            scene.remove(this.pointsMesh);
+            sceneRef.remove(this.pointsMesh);
             this.pointsMesh.geometry.dispose();
             this.pointsMesh = null;
         }
@@ -110,7 +107,7 @@ export class SoftBodyGroup {
         geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
         const mat = new THREE.PointsMaterial({ color: 0x00e5a0, size: 0.015, sizeAttenuation: true });
         this.pointsMesh = new THREE.Points(geo, mat);
-        scene.add(this.pointsMesh);
+        sceneRef.add(this.pointsMesh);
         this._dirty = false;
     }
 
