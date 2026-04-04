@@ -70,7 +70,6 @@
 
             <!-- ══ BONES PANEL ══ -->
             <div id="panel-bones" class="panel">
-                <!-- Selected bone info -->
                 <div id="bone-info" class="bone-info-box" style="display:none">
                     <div class="bi-name" id="bone-info-name">—</div>
                     <div class="bi-hint">LMB drag · rotate &nbsp;|&nbsp; Shift+drag · Z-axis</div>
@@ -149,6 +148,19 @@
                         <label>Damping</label>
                         <input type="range" id="br-damping" min="0.1" max="20" value="6" step="0.1">
                         <span class="val" id="br-damping-val">6.0</span>
+                    </div>
+
+                    <!-- ── Multi-layer controls ── -->
+                    <div class="sect">LAYERS</div>
+                    <div class="layer-row">
+                        <button id="btn-multi-layer" class="layer-btn"
+                            title="Paint through all overlapping meshes along the ray">
+                            ⊕ Multi-layer
+                        </button>
+                        <button id="btn-include-hidden" class="layer-btn"
+                            title="Also paint vertices on meshes hidden via the View panel">
+                            ⊘ Incl. Hidden
+                        </button>
                     </div>
 
                     <div class="sect">GROUPS

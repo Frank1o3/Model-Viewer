@@ -65,6 +65,10 @@ let paintMode = null;   // 'paint' | 'erase' | null
 let isBrushPainting = false;
 let groupCounter = 0;
 
+// ── Multi-layer paint options ──────────────────────────
+let paintMultiLayer = false;  // paint through all hit meshes along the ray
+let paintIncludeHidden = false; // also hit meshes hidden via the View panel toggles
+
 // Physics backend (optional)
 const pythonPhysics = new PythonPhysicsBackend(`${window.location.host}/api/physics`);
 
@@ -396,23 +400,19 @@ function makeBoneNode(bone) {
 function selectBone(bone) {
     selectedBone = bone;
 
-    // Update UI selection
     document.querySelectorAll('.bone-node').forEach(el => {
         el.classList.toggle('selected', el.dataset.uuid === bone.uuid);
     });
 
-    // Show bone properties panel
     const propsPanel = document.getElementById('bone-props');
     if (propsPanel) {
         propsPanel.style.display = 'block';
 
-        // Find or create spring bone
         if (!springBones.has(bone.uuid)) {
             springBones.set(bone.uuid, new SpringBone(bone));
         }
         const sb = springBones.get(bone.uuid);
 
-        // Update sliders - use sp- prefixed IDs for physics panel
         const stiffnessVal = document.getElementById('sp-stiffness-val');
         const dampingVal = document.getElementById('sp-damping-val');
         const gravityVal = document.getElementById('sp-gravity-val');
@@ -429,7 +429,6 @@ function selectBone(bone) {
         if (gravitySlider) gravitySlider.value = sb.gravity;
     }
 
-    // Update bone info display
     const boneNameEl = document.getElementById('sp-bone-name');
     if (boneNameEl) {
         boneNameEl.textContent = bone.name || 'Selected bone';
@@ -533,6 +532,19 @@ btnErase?.addEventListener('click', () => {
     ui.updateHUD(selectedBone, paintMode);
 });
 
+// ── Multi-layer toggle buttons ─────────────────────────
+document.getElementById('btn-multi-layer')?.addEventListener('click', function () {
+    paintMultiLayer = !paintMultiLayer;
+    this.classList.toggle('layer-active', paintMultiLayer);
+    showToast(paintMultiLayer ? 'Multi-layer ON — painting all hit meshes' : 'Multi-layer OFF', true);
+});
+
+document.getElementById('btn-include-hidden')?.addEventListener('click', function () {
+    paintIncludeHidden = !paintIncludeHidden;
+    this.classList.toggle('layer-active', paintIncludeHidden);
+    showToast(paintIncludeHidden ? 'Hidden meshes included in paint' : 'Hidden meshes excluded', true);
+});
+
 document.getElementById('btn-kick-group')?.addEventListener('click', () => {
     if (!activeGroup) { showToast('Select a group first'); return; }
     activeGroup.kick(new THREE.Vector3(
@@ -559,7 +571,18 @@ function doPaint(e) {
     if (!activeGroup || !currentModel) return;
     const ndc = toNDC(e);
     const meshes = getMeshList();
-    paintVertices(raycaster, camera, ndc, activeGroup, paintMode, sliderVal('br-radius'), meshes);
+    const result = paintVertices(
+        raycaster, camera, ndc,
+        activeGroup, paintMode,
+        sliderVal('br-radius'),
+        meshes,
+        { multiLayer: paintMultiLayer, includeHidden: paintIncludeHidden }
+    );
+    // Show a brief layer count hint when multi-layer actually hits more than one mesh.
+    if (paintMultiLayer && result.layers > 1) {
+        document.getElementById('paint-hint').textContent =
+            `Painted ${result.painted} verts across ${result.layers} layers`;
+    }
 }
 
 // ══════════════════════════════════════════════════════
@@ -608,6 +631,8 @@ canvas.addEventListener('mousemove', e => {
         const ndc = toNDC(e);
         const meshes = getMeshList();
         raycaster.setFromCamera(ndc, camera);
+
+        // For the cursor preview, always intersect visible meshes only.
         const hits = raycaster.intersectObjects(meshes);
         if (hits.length > 0) {
             const h = hits[0];
@@ -633,6 +658,10 @@ canvas.addEventListener('mouseup', () => {
         activeGroup.rebuildPoints(scene);
         updateGroupList();
     }
+    // Reset layer hint back to default text.
+    const hint = document.getElementById('paint-hint');
+    if (hint && paintMultiLayer) hint.textContent = 'Multi-layer active — painting all overlapping meshes';
+    else if (hint) hint.textContent = 'Select a group and click Paint,\nthen draw on the mesh';
 });
 
 canvas.addEventListener('mouseleave', () => {
@@ -654,21 +683,15 @@ linkSlider('br-damping', 'br-damping-val', 1);
 // ══════════════════════════════════════════════════════
 //  PHYSICS BUTTONS
 // ══════════════════════════════════════════════════════
-
-// Apply spring to selected bone
 const btnApplySpring = document.getElementById('btn-apply-spring');
 if (btnApplySpring) {
     btnApplySpring.addEventListener('click', () => {
-        if (!selectedBone) {
-            showToast('Select a bone first');
-            return;
-        }
+        if (!selectedBone) { showToast('Select a bone first'); return; }
 
         const stiffness = sliderVal('sp-stiffness');
         const damping = sliderVal('sp-damping');
         const gravity = sliderVal('sp-gravity');
 
-        // Create or update spring bone
         if (!springBones.has(selectedBone.uuid)) {
             const sb = new SpringBone(selectedBone, { stiffness, damping, gravity });
             springBones.set(selectedBone.uuid, sb);
@@ -680,45 +703,33 @@ if (btnApplySpring) {
             sb.gravity = gravity;
             showToast(`Spring updated on ${selectedBone.name}`);
         }
-
         updateSpringList();
     });
 }
 
-// Kick all spring bones
 const btnKickAll = document.getElementById('btn-kick-all');
 if (btnKickAll) {
     btnKickAll.addEventListener('click', () => {
-        springBones.forEach(sb => {
-            sb.kick(0.5, 0.5, 0.5);
-        });
+        springBones.forEach(sb => sb.kick(0.5, 0.5, 0.5));
         showToast('Kicked all spring bones!');
     });
 }
 
-// New soft body group
-const btnNewGroup = document.getElementById('btn-new-group');
-if (btnNewGroup) {
-    btnNewGroup.addEventListener('click', () => {
-        createSoftGroup();
-        showToast('New group created');
-    });
-}
-
-// Kick active group
-const btnKickGroup = document.getElementById('btn-kick-group');
-if (btnKickGroup) {
-    btnKickGroup.addEventListener('click', () => {
-        if (!activeGroup || activeGroup.vertices.length === 0) {
-            showToast('Select a group with vertices first');
-            return;
+const btnRemoveSpring = document.getElementById('btn-remove-spring');
+if (btnRemoveSpring) {
+    btnRemoveSpring.addEventListener('click', () => {
+        if (!selectedBone || !springBones.has(selectedBone.uuid)) {
+            showToast('No spring on selected bone'); return;
         }
-        activeGroup.kick(new THREE.Vector3(0.3, 0.3, 0.3));
-        showToast('Kicked group!');
+        const sb = springBones.get(selectedBone.uuid);
+        sb.bone.quaternion.copy(sb.restQuat); // reset rotation
+        springBones.delete(selectedBone.uuid);
+        showToast(`Spring removed from ${selectedBone.name}`);
+        updateSpringList();
+        buildBoneTree();
     });
 }
 
-// Update spring list display
 function updateSpringList() {
     const container = document.getElementById('spring-list');
     const countEl = document.getElementById('spring-count');
@@ -731,162 +742,33 @@ function updateSpringList() {
         const div = document.createElement('div');
         div.className = 'group-item';
         div.innerHTML = `
-            <span class="group-name">${sb.bone.name}</span>
-            <span class="group-count">k=${sb.stiffness.toFixed(1)}</span>
+            <span class="gi-name">${sb.bone.name}</span>
+            <span class="gi-count">k=${sb.stiffness.toFixed(1)}</span>
         `;
-        div.addEventListener('click', () => {
-            selectBone(sb.bone);
-        });
+        div.addEventListener('click', () => selectBone(sb.bone));
         container.appendChild(div);
-    });
-}
-
-// ══════════════════════════════════════════════════════
-//  MODEL LOADING
-// ══════════════════════════════════════════════════════
-dropZone = document.getElementById('drop-zone');
-fileInput = document.getElementById('file-input');
-texInput = document.getElementById('tex-input');
-
-function onModelLoaded(root, filename, fmt) {
-    // Cleanup old
-    if (currentModel) scene.remove(currentModel);
-    clearBones();
-    clearSoftGroups();
-    springBones.clear();
-    clearTracking();
-
-    currentModel = root;
-    modelFormat = fmt;
-
-    // Add mesh to scene with tracking
-    addMeshToScene(scene, root);
-
-    fixMaterials(root, fmt);
-
-    // Normalize model
-    normalizeModel(root, camera, controls);
-
-    // Extract bones and build UI
-    extractAndBuildBones(root);
-
-    // Update texture count and view count
-    updateTexCount(texRegistry.size);
-    updateViewLists();
-    updateSpringList();
-
-    showToast('Model loaded: ' + filename, true);
-}
-
-if (dropZone) {
-    dropZone.addEventListener('dragover', e => {
-        e.preventDefault();
-        dropZone.classList.add('drag');
-    });
-
-    dropZone.addEventListener('dragleave', () => {
-        dropZone.classList.remove('drag');
-    });
-
-    dropZone.addEventListener('drop', e => {
-        e.preventDefault();
-        dropZone.classList.remove('drag');
-        const files = [...e.dataTransfer.files];
-        const model = files.find(f => /\.(glb|gltf|fbx)$/i.test(f.name));
-        const n = registerTextureFiles(files);
-        if (n) updateTexCount(n);
-        if (model) {
-            showLoading(true, 0, 'LOADING');
-            loadModel(model,
-                (root, name, fmt) => {
-                    showLoading(false);
-                    onModelLoaded(root, name, fmt);
-                },
-                (xhr) => {
-                    const p = Math.round(xhr.loaded / (xhr.total || 1) * 100);
-                    showLoading(true, p, p === 100 ? 'BUILDING' : 'LOADING');
-                },
-                (err) => {
-                    showLoading(false);
-                    showToast('Load failed: ' + (err.message || '?'));
-                }
-            );
-        } else if (n) {
-            showToast('Textures registered — drop your model now', true);
-        } else {
-            showToast('Drop a .glb, .gltf, or .fbx file');
-        }
-    });
-
-    dropZone.addEventListener('click', () => fileInput.click());
-}
-
-if (fileInput) {
-    fileInput.addEventListener('change', e => {
-        if (e.target.files[0]) {
-            showLoading(true, 0, 'LOADING');
-            loadModel(e.target.files[0],
-                (root, name, fmt) => {
-                    showLoading(false);
-                    onModelLoaded(root, name, fmt);
-                },
-                (xhr) => {
-                    const p = Math.round(xhr.loaded / (xhr.total || 1) * 100);
-                    showLoading(true, p, p === 100 ? 'BUILDING' : 'LOADING');
-                },
-                (err) => {
-                    showLoading(false);
-                    showToast('Load failed: ' + (err.message || '?'));
-                }
-            );
-        }
-        e.target.value = '';
-    });
-}
-
-if (document.getElementById('btn-load-tex')) {
-    document.getElementById('btn-load-tex').addEventListener('click', () => texInput.click());
-}
-
-if (texInput) {
-    texInput.addEventListener('change', e => {
-        const n = registerTextureFiles([...e.target.files]);
-        updateTexCount(texRegistry.size);
-        if (n && currentModel) fixMaterials(currentModel, modelFormat);
-        e.target.value = '';
     });
 }
 
 // ══════════════════════════════════════════════════════
 //  ANIMATION LOOP
 // ══════════════════════════════════════════════════════
-
-// Batch update timers for backend calls
 let backendAccumulator = 0;
-const BACKEND_UPDATE_INTERVAL = 0.05; // 50ms between backend calls
+const BACKEND_UPDATE_INTERVAL = 0.05;
 
 async function updatePhysicsWithBackend(dt) {
     if (!pythonPhysics.enabled) return false;
-
     try {
-        // Update soft body groups via backend
         if (softGroups.length > 0 && activeGroup && activeGroup.vertices.length > 0) {
             const result = await pythonPhysics.computeSoftBody(
-                activeGroup.vertices,
-                activeGroup.stiffness,
-                activeGroup.damping,
-                dt
+                activeGroup.vertices, activeGroup.stiffness, activeGroup.damping, dt
             );
-
             if (result) {
-                // Apply results to vertices
                 result.vertices.forEach((v, i) => {
                     if (i < activeGroup.vertices.length) {
                         const vertex = activeGroup.vertices[i];
                         vertex.offset.set(v.offset[0], v.offset[1], v.offset[2]);
                         vertex.vel.set(v.velocity[0], v.velocity[1], v.velocity[2]);
-
-                        // Update mesh geometry
                         const attr = vertex.mesh.geometry.attributes.position;
                         attr.setXYZ(vertex.index,
                             vertex.restPos.x + vertex.offset.x,
@@ -900,7 +782,6 @@ async function updatePhysicsWithBackend(dt) {
             }
         }
 
-        // Update spring bones via backend
         if (springBones.size > 0) {
             const bonesData = [];
             springBones.forEach((sb, uuid) => {
@@ -912,16 +793,11 @@ async function updatePhysicsWithBackend(dt) {
                     euler.y - new THREE.Euler().setFromQuaternion(sb.restQuat).y,
                     euler.z - new THREE.Euler().setFromQuaternion(sb.restQuat).z],
                     velocity: [sb.velX, sb.velY, sb.velZ],
-                    stiffness: sb.stiffness,
-                    damping: sb.damping,
-                    gravity: sb.gravity
+                    stiffness: sb.stiffness, damping: sb.damping, gravity: sb.gravity
                 });
             });
-
             const result = await pythonPhysics.computeSpringBones(bonesData, dt);
-
             if (result) {
-                // Apply results to bones
                 result.bones.forEach(boneResult => {
                     const sb = springBones.get(boneResult.uuid);
                     if (sb) {
@@ -931,8 +807,6 @@ async function updatePhysicsWithBackend(dt) {
                         sb.velX = boneResult.velocity[0];
                         sb.velY = boneResult.velocity[1];
                         sb.velZ = boneResult.velocity[2];
-
-                        // Apply quaternion
                         const offset = new THREE.Quaternion().setFromEuler(
                             new THREE.Euler(sb.offsetX, sb.offsetY, sb.offsetZ)
                         );
@@ -941,7 +815,6 @@ async function updatePhysicsWithBackend(dt) {
                 });
             }
         }
-
         return true;
     } catch (error) {
         console.warn('Backend physics update failed:', error);
@@ -954,7 +827,6 @@ function animate() {
     requestAnimationFrame(animate);
     const dt = Math.min(clock.getDelta(), 0.05);
 
-    // Try backend physics first if enabled
     if (pythonPhysics.enabled) {
         backendAccumulator += dt;
         if (backendAccumulator >= BACKEND_UPDATE_INTERVAL) {
@@ -962,13 +834,7 @@ function animate() {
             backendAccumulator = 0;
         }
     } else {
-        // Fall back to local JS physics
-        // Spring bones
-        springBones.forEach(sb => {
-            if (sb.enabled !== false) sb.update(dt);
-        });
-
-        // Soft body groups
+        springBones.forEach(sb => { if (sb.enabled !== false) sb.update(dt); });
         softGroups.forEach(g => g.update(dt));
     }
 
@@ -977,5 +843,4 @@ function animate() {
 }
 animate();
 
-// Expose for debugging
 window.app = { scene, camera, renderer, currentModel, springBones, softGroups, pythonPhysics };

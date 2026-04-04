@@ -780,3 +780,39 @@ body {
 .vlist.active {
     display: block
 }
+
+/* ── Multi-layer paint controls ── */
+.layer-row {
+    display: flex;
+    gap: 6px;
+    padding: 6px 12px 8px;
+    border-bottom: 1px solid rgba(30, 39, 48, .4)
+}
+
+.layer-btn {
+    flex: 1;
+    font-family: var(--mono);
+    font-size: 10px;
+    background: rgba(0, 168, 232, .05);
+    border: 1px solid rgba(0, 168, 232, .15);
+    color: var(--dim);
+    border-radius: 4px;
+    padding: 5px 6px;
+    cursor: pointer;
+    transition: background .15s, color .15s, border-color .15s;
+    text-align: center;
+    letter-spacing: .3px
+}
+
+.layer-btn:hover {
+    background: rgba(0, 168, 232, .12);
+    color: var(--accent2);
+    border-color: rgba(0, 168, 232, .3)
+}
+
+/* active state toggled by JS via .layer-active */
+.layer-btn.layer-active {
+    background: rgba(0, 168, 232, .18);
+    border-color: var(--accent2);
+    color: var(--accent2)
+}

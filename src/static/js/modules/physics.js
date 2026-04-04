@@ -9,14 +9,14 @@ import * as THREE from 'three';
  */
 export class SpringBone {
     constructor(bone, opts = {}) {
-        this.bone      = bone;
+        this.bone = bone;
         this.stiffness = opts.stiffness ?? 12;
-        this.damping   = opts.damping   ?? 5;
-        this.gravity   = opts.gravity   ?? 0;
-        this.enabled   = true;
-        this.restQuat  = bone.quaternion.clone();
+        this.damping = opts.damping ?? 5;
+        this.gravity = opts.gravity ?? 0;
+        this.enabled = true;
+        this.restQuat = bone.quaternion.clone();
         this.offsetX = 0; this.offsetY = 0; this.offsetZ = 0;
-        this.velX    = 0; this.velY    = 0; this.velZ    = 0;
+        this.velX = 0; this.velY = 0; this.velZ = 0;
     }
 
     syncRest() {
@@ -51,13 +51,13 @@ export class SpringBone {
  */
 export class SoftBodyGroup {
     constructor(name, opts = {}) {
-        this.name      = name;
+        this.name = name;
         this.stiffness = opts.stiffness ?? 20;
-        this.damping   = opts.damping   ?? 6;
-        this.enabled   = true;
-        this.vertices  = []; // { mesh, index, restPos, offset, vel }
+        this.damping = opts.damping ?? 6;
+        this.enabled = true;
+        this.vertices = []; // { mesh, index, restPos, offset, vel }
         this.pointsMesh = null;
-        this._dirty    = false;
+        this._dirty = false;
     }
 
     hasVertex(mesh, index) {
@@ -72,8 +72,8 @@ export class SoftBodyGroup {
         this.vertices.push({
             mesh, index,
             restPos: pos.clone(),
-            offset:  new THREE.Vector3(),
-            vel:     new THREE.Vector3()
+            offset: new THREE.Vector3(),
+            vel: new THREE.Vector3()
         });
         this._dirty = true;
     }
@@ -100,7 +100,7 @@ export class SoftBodyGroup {
         const pos = new Float32Array(this.vertices.length * 3);
         this.vertices.forEach((v, i) => {
             const wp = v.restPos.clone().applyMatrix4(v.mesh.matrixWorld);
-            pos[i * 3]     = wp.x;
+            pos[i * 3] = wp.x;
             pos[i * 3 + 1] = wp.y;
             pos[i * 3 + 2] = wp.z;
         });
@@ -139,33 +139,69 @@ export class SoftBodyGroup {
 }
 
 /**
- * Visibility-aware vertex painting.
- * Raycasts to the hit surface first, then selects vertices within radius.
+ * Visibility-aware vertex painting with optional multi-layer support.
+ *
+ * opts.multiLayer (bool, default false)
+ *   false — classic mode: paint only the frontmost hit surface.
+ *   true  — multi-layer mode: walk every hit along the ray and paint
+ *           vertices within brushRadius of each individual hit point.
+ *           Useful for overlapping meshes (e.g. clothing over a body).
+ *
+ * opts.includeHidden (bool, default false)
+ *   When true, meshes with mesh.visible === false are temporarily made
+ *   raycastable so vertices behind disabled toggles can also be painted.
+ *
  * meshes array must be provided by the caller.
  */
-export function paintVertices(raycaster, camera, ndc, activeGroup, paintMode, brushRadius, meshes) {
-    if (!activeGroup || !meshes || meshes.length === 0) return { painted: 0 };
+export function paintVertices(raycaster, camera, ndc, activeGroup, paintMode, brushRadius, meshes, opts = {}) {
+    if (!activeGroup || !meshes || meshes.length === 0) return { painted: 0, layers: 0 };
+
+    const { multiLayer = false, includeHidden = false } = opts;
+
+    // Temporarily reveal hidden meshes so the raycaster can reach them.
+    const hiddenMeshes = [];
+    if (includeHidden) {
+        meshes.forEach(m => {
+            if (!m.visible) { m.visible = true; hiddenMeshes.push(m); }
+        });
+    }
 
     raycaster.setFromCamera(ndc, camera);
-    const hits = raycaster.intersectObjects(meshes);
-    if (hits.length === 0) return { painted: 0 };
+    const allHits = raycaster.intersectObjects(meshes);
 
-    const hit  = hits[0];
-    const mesh = hit.object;
-    const wp   = hit.point;
-    const pos  = mesh.geometry.attributes.position;
-    const mw   = mesh.matrixWorld;
+    // Restore visibility immediately after raycasting.
+    hiddenMeshes.forEach(m => { m.visible = false; });
+
+    if (allHits.length === 0) return { painted: 0, layers: 0 };
+
+    // In single-layer mode only process the frontmost hit.
+    const hitsToProcess = multiLayer ? allHits : [allHits[0]];
+
     let painted = 0;
+    // Track which meshes we've already processed this stroke to avoid
+    // double-painting when the ray clips the same mesh more than once.
+    const visitedMeshes = new Set();
 
-    for (let i = 0; i < pos.count; i++) {
-        const v = new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(mw);
-        if (v.distanceTo(wp) < brushRadius) {
-            if (paintMode === 'paint') activeGroup.addVertex(mesh, i);
-            else                       activeGroup.removeVertex(mesh, i);
-            painted++;
+    for (const hit of hitsToProcess) {
+        const mesh = hit.object;
+        if (visitedMeshes.has(mesh)) continue;
+        visitedMeshes.add(mesh);
+
+        const wp = hit.point;
+        const pos = mesh.geometry.attributes.position;
+        const mw = mesh.matrixWorld;
+
+        for (let i = 0; i < pos.count; i++) {
+            const v = new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(mw);
+            if (v.distanceTo(wp) < brushRadius) {
+                if (paintMode === 'paint') activeGroup.addVertex(mesh, i);
+                else activeGroup.removeVertex(mesh, i);
+                painted++;
+            }
         }
     }
-    return { painted };
+
+    return { painted, layers: visitedMeshes.size };
 }
 
 /**
@@ -175,8 +211,8 @@ export class PythonPhysicsBackend {
     constructor(serverUrl = '/api/physics') {
         this.serverUrl = serverUrl;
         console.log(this.serverUrl);
-        this.enabled   = false;
-        this.latency   = 0;
+        this.enabled = false;
+        this.latency = 0;
     }
 
     async computeSoftBody(vertices, stiffness, damping, dt) {
@@ -188,8 +224,8 @@ export class PythonPhysicsBackend {
                 body: JSON.stringify({
                     vertices: vertices.map(v => ({
                         position: [v.restPos.x, v.restPos.y, v.restPos.z],
-                        offset:   [v.offset.x,  v.offset.y,  v.offset.z],
-                        velocity: [v.vel.x,      v.vel.y,     v.vel.z]
+                        offset: [v.offset.x, v.offset.y, v.offset.z],
+                        velocity: [v.vel.x, v.vel.y, v.vel.z]
                     })),
                     stiffness, damping, dt
                 })
