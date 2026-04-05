@@ -42,3 +42,7 @@ app.add_middleware(
 @app.get("/")
 async def root_get() -> FileResponse:
     return FileResponse(site_path / "index.html")
+
+@app.get("/health")
+async def health():
+    return {"content": "Yes, I'm here bruh"}
